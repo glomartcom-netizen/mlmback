@@ -25,13 +25,16 @@ const pool = mysql.createPool({
     decimalNumbers: true                  
 });                  
                   
-const transporter = nodemailer.createTransport({                  
-    service: "gmail",                  
-    auth: {                  
-        user: process.env.EMAIL_USER,                  
-        pass: process.env.EMAIL_PASS                  
-    }                  
-});                  
+const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+// 🔥 ADD THIS LINE HERE
+const LEVEL_UNLOCK = 300000;
                   
 // ==========================================                  
 // 2. HELPER FUNCTIONS                  
@@ -466,7 +469,7 @@ cron.schedule('0 0 * * *', async () => {
   
             if (earned >= maxIncome) continue; // 🚫 STOP                  
   
-            if (r.level_no === 1 || r.direct_volume >= 300000) {                  
+            if (r.level_no === 1 || r.direct_volume >= LEVEL_UNLOCK)                  
   
                 const amt = r.daily_amt;                  
                 const netAmt = amt * 0.9;                  
@@ -715,7 +718,7 @@ app.get('/api/admin/unlocked-users', async (req, res) => {
                 direct_volume,
                 total_deposit
             FROM Users
-            WHERE direct_volume >= 300000
+            WHERE direct_volume >= ${LEVEL_UNLOCK}
             ORDER BY direct_volume DESC
         `);
 
@@ -764,7 +767,7 @@ app.get('/api/admin/unlock-count', async (req, res) => {
         const [rows] = await pool.query(`
             SELECT COUNT(*) as total
             FROM Users
-            WHERE direct_volume >= 300000
+            WHERE direct_volume >= ${LEVEL_UNLOCK}
         `);
 
         res.json({ total: rows[0].total });
@@ -784,9 +787,9 @@ app.get('/api/admin/unlock-progress', async (req, res) => {
                 member_id,
                 full_name,
                 direct_volume,
-                (direct_volume / 300000 * 100) as progress
+                (direct_volume / ${LEVEL_UNLOCK} * 100) as progress
             FROM Users
-            WHERE direct_volume < 300000
+            WHERE direct_volume < ${LEVEL_UNLOCK}
             ORDER BY direct_volume DESC
         `);
 
