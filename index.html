@@ -391,7 +391,7 @@ app.post('/api/admin/deposit-approve', async (req, res) => {
 if (sponsor_id && sponsor_id !== "") {
 
     const bonus = amount * CONFIG.DIRECT_PERCENT;
-    const charge = bonus * CONFIG.CHARGE_PERCENT;
+    const charge = bonus * CONFIG.DIRECT_CHARGE;
 
     await conn.query(
         "UPDATE Users SET direct_volume = direct_volume + ? WHERE member_id=?",
@@ -414,8 +414,10 @@ if (sponsor_id && sponsor_id !== "") {
             WHERE user_id=?
         `, [userId]);
 
-        const earned = sumIncome[0].total || 0;
-        const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+        const deposit = user.total_deposit || 0;
+
+const earned = income[0].total || 0;
+const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 
         if (earned >= maxIncome) return;
 
@@ -428,14 +430,14 @@ if (sponsor_id && sponsor_id !== "") {
 
         if (netIncome > 0) {
 
-            const gross = netIncome / (1 - CONFIG.CHARGE_PERCENT);
-            const serviceCharge = gross * CONFIG.CHARGE_PERCENT;
+    const gross = netIncome / (1 - CONFIG.DIRECT_CHARGE);
+    const serviceCharge = gross * CONFIG.DIRECT_CHARGE;
 
-            await conn.query(`
-                INSERT INTO Income_Logs 
-                (user_id, type, amount, service_charge, net_total) 
-                VALUES (?, 'DIRECT', ?, ?, ?)
-            `, [userId, gross, serviceCharge, netIncome]);
+    await conn.query(`
+        INSERT INTO Income_Logs 
+        (user_id, type, amount, service_charge, net_total) 
+        VALUES (?, 'DIRECT', ?, ?, ?)
+    `, [userId, gross, serviceCharge, netIncome]);
 
             await updateWallet(userId, netIncome, 'CREDIT', 'Direct Income');
         }
@@ -462,14 +464,16 @@ for (let i = 0; i < CONFIG.LEVEL_RATES.length; i++) {
     const rate = CONFIG.LEVEL_RATES[i];
 
     await conn.query(`
-        INSERT INTO Level_Tracker 
-        (user_id, from_user_id, level_no, daily_amt, days_left, status) 
-        VALUES (?, ?, ?, ?, CONFIG.LEVEL_DAYS, 'PENDING')
-        sp[0].id,
-        db_user_id,
-        levelNo,
-        amount * rate
-    ]);
+    INSERT INTO Level_Tracker 
+    (user_id, from_user_id, level_no, daily_amt, days_left, status) 
+    VALUES (?, ?, ?, ?, ?, 'PENDING')
+`, [
+    sp[0].id,
+    db_user_id,
+    levelNo,
+    amount * rate,
+    CONFIG.LEVEL_DAYS
+]);
 
     upLine = sp[0].sponsor_id;
 }
@@ -613,64 +617,69 @@ for (let r of trackers) {
         }
 
         const newDays = r.days_left - 1;
-        const newStatus = (newDays === 0) ? 'COMPLETED' : 'PENDING';
+const newStatus = (newDays === 0) ? 'COMPLETED' : 'PENDING';
 
-        await conn.query(`
-            UPDATE Level_Tracker 
-            SET days_left = ?, status = ? 
-            WHERE id = ?
-        `, [newDays, newStatus, r.id]);
+await conn.query(`
+    UPDATE Level_Tracker 
+    SET days_left = ?, status = ? 
+    WHERE id = ?
+`, [newDays, newStatus, r.id]);
+
     }
 }
-                  
+
+// ✅ இதுதான் correct place
+await conn.commit();
+    
 // ==========================================
 // 8. WITHDRAW SYSTEM (FINAL SAFE VERSION)
 // ==========================================
 app.post('/api/user/withdraw', async (req, res) => {
+
+    const conn = await pool.getConnection();
+
     try {
+        await conn.beginTransaction();
 
         const { memberId, amount } = req.body;
 
-        const [u] = await pool.query(
+        // 🔹 USER CHECK
+        const [u] = await conn.query(
             "SELECT id FROM Users WHERE member_id=?",
             [memberId]
         );
 
         if (u.length === 0) {
-            return res.json({ success: false, message: "User not found" });
+            throw new Error("User not found");
         }
 
         const userId = u[0].id;
 
-        // 🔹 Wallet Balance
-        const [wallet] = await pool.query(
+        // 🔹 WALLET CHECK
+        const [wallet] = await conn.query(
             "SELECT balance FROM Wallets WHERE user_id=?",
             [userId]
         );
 
         const balance = wallet[0]?.balance || 0;
 
-        // 🔥 MIN WITHDRAW (CONFIG)
+        // 🔥 MIN WITHDRAW
         if (amount < CONFIG.MIN_WITHDRAW) {
-            return res.json({
-                success: false,
-                message: `Minimum withdraw is ${CONFIG.MIN_WITHDRAW}`
-            });
+            throw new Error(`Minimum withdraw is ${CONFIG.MIN_WITHDRAW}`);
         }
 
         // 🔥 BALANCE CHECK
         if (amount > balance) {
-            return res.json({
-                success: false,
-                message: "Insufficient Wallet Balance"
-            });
+            throw new Error("Insufficient Wallet Balance");
         }
 
-        // 🔥 INSERT REQUEST
-        await pool.query(
+        // 🔥 CREATE REQUEST
+        await conn.query(
             "INSERT INTO Withdrawals (user_id, amount, status) VALUES (?, ?, 'PENDING')",
             [userId, amount]
         );
+
+        await conn.commit();
 
         res.json({
             success: true,
@@ -678,7 +687,16 @@ app.post('/api/user/withdraw', async (req, res) => {
         });
 
     } catch (err) {
-        res.status(500).json({ error: err.message });
+
+        await conn.rollback();
+
+        res.status(500).json({
+            success: false,
+            message: err.message
+        });
+
+    } finally {
+        conn.release();
     }
 });
                   
