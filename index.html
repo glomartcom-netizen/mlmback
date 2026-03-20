@@ -465,19 +465,37 @@ for (let i = 0; i < CONFIG.LEVEL_RATES.length; i++) {
     const rate = CONFIG.LEVEL_RATES[i];
 
     await conn.query(`
-    INSERT INTO Level_Tracker 
-    (user_id, from_user_id, level_no, daily_amt, days_left, status) 
-    VALUES (?, ?, ?, ?, ?, 'PENDING')
-`, [
-    sp[0].id,
-    db_user_id,
-    levelNo,
-    amount * rate,
-    CONFIG.LEVEL_DAYS
-]);
+        INSERT INTO Level_Tracker 
+        (user_id, from_user_id, level_no, daily_amt, days_left, status) 
+        VALUES (?, ?, ?, ?, ?, 'PENDING')
+    `, [
+        sp[0].id,
+        db_user_id,
+        levelNo,
+        amount * rate,
+        CONFIG.LEVEL_DAYS
+    ]);
 
     upLine = sp[0].sponsor_id;
 }
+
+// ======================================
+// ✅ END OF DEPOSIT PROCESS
+// ======================================
+await conn.commit();
+
+res.json({
+    success: true,
+    message: "Deposit Approved"
+});
+
+} catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+} finally {
+    conn.release();
+}
+});
                   
 // ==========================================                  
 // 7. DAILY CRON (ROI & LEVEL)                  
@@ -553,7 +571,7 @@ await conn.query(`
 `, [CONFIG.ROI_DAYS]);
   
 // ======================================
-// 🔥 LEVEL PROCESS (FINAL SAFE VERSION)
+// 🔥 LEVEL PROCESS (FINAL CLEAN + SAFE)
 // ======================================
 const [trackers] = await conn.query(`
     SELECT lt.*, u.direct_volume, u.total_deposit
@@ -572,17 +590,15 @@ for (let r of trackers) {
     `, [r.user_id]);
 
     const earned = sumIncome[0].total || 0;
-    const maxIncome = r.total_deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+    const maxIncome = (r.total_deposit || 0) * CONFIG.MAX_INCOME_MULTIPLIER;
 
     // 🚫 STOP IF 4X DONE
     if (earned >= maxIncome) continue;
 
-    // 🔓 LEVEL UNLOCK CONDITION
-    if (r.level_no === 1 || r.direct_volume >= CONFIG.LEVEL_UNLOCK) {
+    // 🔓 LEVEL UNLOCK + DEPOSIT CHECK
+    if (r.total_deposit > 0 && (r.level_no === 1 || r.direct_volume >= CONFIG.LEVEL_UNLOCK)) {
 
-        const amt = r.daily_amt;
-
-        let netAmt = amt * (1 - CONFIG.LEVEL_CHARGE);
+        let netAmt = r.daily_amt * (1 - CONFIG.LEVEL_CHARGE);
 
         // 🔥 PARTIAL CONTROL
         if (earned + netAmt > maxIncome) {
@@ -597,7 +613,7 @@ for (let r of trackers) {
                 WHERE user_id=? AND type='LEVEL' AND DATE(created_at)=CURDATE()
             `, [r.user_id]);
 
-            if (existLevel.length === 0 && netAmt > 0) {
+            if (existLevel.length === 0) {
 
                 const gross = netAmt / (1 - CONFIG.LEVEL_CHARGE);
                 const charge = gross * CONFIG.LEVEL_CHARGE;
@@ -616,17 +632,17 @@ for (let r of trackers) {
                 );
             }
         }
-
-        const newDays = r.days_left - 1;
-const newStatus = (newDays === 0) ? 'COMPLETED' : 'PENDING';
-
-await conn.query(`
-    UPDATE Level_Tracker 
-    SET days_left = ?, status = ? 
-    WHERE id = ?
-`, [newDays, newStatus, r.id]);
-
     }
+
+    // 🔄 DAYS UPDATE (ALWAYS RUN)
+    const newDays = r.days_left - 1;
+    const newStatus = (newDays === 0) ? 'COMPLETED' : 'PENDING';
+
+    await conn.query(`
+        UPDATE Level_Tracker 
+        SET days_left = ?, status = ? 
+        WHERE id = ?
+    `, [newDays, newStatus, r.id]);
 }
 
 await conn.commit();
