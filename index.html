@@ -756,6 +756,7 @@ app.post('/api/admin/block-user', async (req, res) => {
                   
 app.get('/api/admin/members', async (req, res) => {
     try {
+
         const [rows] = await pool.query(`
             SELECT 
                 u.id,
@@ -767,13 +768,40 @@ app.get('/api/admin/members', async (req, res) => {
                 u.total_deposit,
                 u.status,
                 u.sponsor_id,
-                u.created_at,   -- 🔥 JOIN DATE ADDED
-                s.full_name as sponsor_name
+                u.created_at,
+                u.direct_volume,
+
+                s.full_name as sponsor_name,
+
+                IFNULL(SUM(i.net_total),0) as total_income,
+
+                (
+                    SELECT COUNT(*) 
+                    FROM Deposits d 
+                    WHERE d.user_id = u.id
+                ) as total_deposits
+
             FROM Users u
             LEFT JOIN Users s ON u.sponsor_id = s.member_id
+            LEFT JOIN Income_Logs i ON i.user_id = u.id
+
+            GROUP BY u.id
             ORDER BY u.id DESC
         `);
-        res.json(rows);
+
+        const result = rows.map(r => {
+            const maxIncome = r.total_deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+
+            return {
+                ...r,
+                max_income: maxIncome,
+                is_4x: r.total_income >= maxIncome,
+                is_unlocked: r.direct_volume >= CONFIG.LEVEL_UNLOCK
+            };
+        });
+
+        res.json(result);
+
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -917,7 +945,6 @@ app.get('/api/admin/daily-payout', async (req, res) => {
         const date = req.query.date;
 
         const [rows] = await pool.query(`
-
             SELECT 
                 DATE(i.created_at) as date,
 
@@ -931,14 +958,12 @@ app.get('/api/admin/daily-payout', async (req, res) => {
                 u.total_deposit,
                 u.direct_volume,
 
-                -- 🔥 TOTAL INCOME
                 IFNULL(SUM(i.net_total),0) as today_income,
 
                 IFNULL(SUM(CASE WHEN i.type='ROI' THEN i.net_total ELSE 0 END),0) as roi,
                 IFNULL(SUM(CASE WHEN i.type='DIRECT' THEN i.net_total ELSE 0 END),0) as direct,
                 IFNULL(SUM(CASE WHEN i.type='LEVEL' THEN i.net_total ELSE 0 END),0) as level,
 
-                -- 🔥 ALL TIME INCOME
                 (
                     SELECT IFNULL(SUM(net_total),0)
                     FROM Income_Logs 
@@ -951,21 +976,15 @@ app.get('/api/admin/daily-payout', async (req, res) => {
             WHERE DATE(i.created_at) = ${date ? "?" : "CURDATE()"}
 
             GROUP BY i.user_id
-
             ORDER BY today_income DESC
-
         `, date ? [date] : []);
 
-        // 🔥 ADD CALCULATIONS
         const result = rows.map(r => {
-
             const maxIncome = r.total_deposit * CONFIG.MAX_INCOME_MULTIPLIER;
-            const remaining = maxIncome - r.total_income;
-
             return {
                 ...r,
                 max_income: maxIncome,
-                remaining: remaining,
+                remaining: maxIncome - r.total_income,
                 is_4x: r.total_income >= maxIncome,
                 is_unlocked: r.direct_volume >= CONFIG.LEVEL_UNLOCK
             };
@@ -977,6 +996,7 @@ app.get('/api/admin/daily-payout', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+            
  // ==========================================
 // 🔥 DAILY DEPOSIT FULL DETAILS (FINAL)
 // ==========================================
