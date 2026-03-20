@@ -384,7 +384,8 @@ app.post('/api/admin/deposit-approve', async (req, res) => {
         await conn.query(  
             "UPDATE Users SET total_deposit = total_deposit + ?, status='ACTIVE' WHERE id=?",  
             [amount, db_user_id]  
-        );                  
+        );  
+                    
   // ======================================
 // 🔥 DIRECT INCOME WITH 4X CONTROL (FINAL)
 // ======================================
@@ -406,38 +407,40 @@ if (sponsor_id && sponsor_id !== "") {
     if (spUser.length > 0) {
 
         const userId = spUser[0].id;
-        const deposit = spUser[0].total_deposit;
+        const deposit = spUser[0].total_deposit || 0;
 
-const [sumIncome] = await conn.query(`
-    SELECT SUM(net_total) as total 
-    FROM Income_Logs 
-    WHERE user_id=?
-`, [userId]);
+        const [sumIncome] = await conn.query(`
+            SELECT SUM(net_total) as total 
+            FROM Income_Logs 
+            WHERE user_id=?
+        `, [userId]);
 
-const earned = sumIncome[0].total || 0;
-const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+        const earned = sumIncome[0].total || 0;
+        const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 
-        if (earned >= maxIncome) return;
+        // ✅ FIXED (NO RETURN)
+        if (earned < maxIncome) {
 
-        let netIncome = bonus - charge;
+            let netIncome = bonus - charge;
 
-        // 🔥 partial control
-        if (earned + netIncome > maxIncome) {
-            netIncome = maxIncome - earned;
-        }
+            // 🔥 partial control
+            if (earned + netIncome > maxIncome) {
+                netIncome = maxIncome - earned;
+            }
 
-        if (netIncome > 0) {
+            if (netIncome > 0) {
 
-    const gross = netIncome / (1 - CONFIG.DIRECT_CHARGE);
-    const serviceCharge = gross * CONFIG.DIRECT_CHARGE;
+                const gross = netIncome / (1 - CONFIG.DIRECT_CHARGE);
+                const serviceCharge = gross * CONFIG.DIRECT_CHARGE;
 
-    await conn.query(`
-        INSERT INTO Income_Logs 
-        (user_id, type, amount, service_charge, net_total) 
-        VALUES (?, 'DIRECT', ?, ?, ?)
-    `, [userId, gross, serviceCharge, netIncome]);
+                await conn.query(`
+                    INSERT INTO Income_Logs 
+                    (user_id, type, amount, service_charge, net_total) 
+                    VALUES (?, 'DIRECT', ?, ?, ?)
+                `, [userId, gross, serviceCharge, netIncome]);
 
-            await updateWallet(userId, netIncome, 'CREDIT', 'Direct Income');
+                await updateWallet(userId, netIncome, 'CREDIT', 'Direct Income');
+            }
         }
     }
 }
