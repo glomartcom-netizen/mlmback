@@ -169,9 +169,9 @@ app.get('/api/user/dashboard/:memberId', async (req, res) => {
     
         const totalTeam = team[0].total || 0;    
     
-        // 🔹 4X Logic    
-        const deposit = user.total_deposit || 0;    
-        const is4x = totalTeam >= (deposit * 4);    
+        // 🔹 4X Logic (CORRECT)
+        const earned = income[0].total || 0;
+        const is4x = earned >= (deposit * 4);
     
         // 🔹 Referral    
         const referral = `http://localhost:3000/register?ref=${memberId}`;    
@@ -806,7 +806,7 @@ app.get('/api/admin/growth', async (req, res) => {
             SELECT 
                 DATE(created_at) as date,
                 COUNT(*) as users,
-                SUM(total_deposit) as deposit
+                SUM(CASE WHEN total_deposit > 0 THEN total_deposit ELSE 0 END) as deposit
             FROM Users
             GROUP BY DATE(created_at)
             ORDER BY date DESC
