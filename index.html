@@ -597,7 +597,7 @@ for (let r of trackers) {
                 WHERE user_id=? AND type='LEVEL' AND DATE(created_at)=CURDATE()
             `, [r.user_id]);
 
-            if (existLevel.length === 0) {
+            if (existLevel.length === 0 && netAmt > 0) {
 
                 const gross = netAmt / (1 - CONFIG.LEVEL_CHARGE);
                 const charge = gross * CONFIG.LEVEL_CHARGE;
@@ -629,8 +629,15 @@ await conn.query(`
     }
 }
 
-// ✅ இதுதான் correct place
 await conn.commit();
+
+} catch (err) {
+    await conn.rollback();
+    console.error("CRON ERROR:", err);
+} finally {
+    conn.release();
+}
+});
     
 // ==========================================
 // 8. WITHDRAW SYSTEM (FINAL SAFE VERSION)
