@@ -386,13 +386,12 @@ app.post('/api/admin/deposit-approve', async (req, res) => {
             [amount, db_user_id]  
         );  
                     
-  // ======================================
-// 🔥 DIRECT INCOME WITH 4X CONTROL (FINAL)
+// ======================================
+// 🔥 DIRECT INCOME WITH 4X CONTROL (FINAL CLEAN)
 // ======================================
 if (sponsor_id && sponsor_id !== "") {
 
     const bonus = amount * CONFIG.DIRECT_PERCENT;
-    const charge = bonus * CONFIG.DIRECT_CHARGE;
 
     await conn.query(
         "UPDATE Users SET direct_volume = direct_volume + ? WHERE member_id=?",
@@ -409,6 +408,7 @@ if (sponsor_id && sponsor_id !== "") {
         const userId = spUser[0].id;
         const deposit = spUser[0].total_deposit || 0;
 
+        // 🔴 TOTAL INCOME
         const [sumIncome] = await conn.query(`
             SELECT SUM(net_total) as total 
             FROM Income_Logs 
@@ -418,12 +418,14 @@ if (sponsor_id && sponsor_id !== "") {
         const earned = sumIncome[0].total || 0;
         const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 
-        // ✅ FIXED (NO RETURN)
-        if (earned < maxIncome) {
+        // 🚫 STOP IF 4X REACHED
+        if (earned >= maxIncome) {
+            // just skip income (NO RETURN)
+        } else {
 
-            let netIncome = bonus - charge;
+            let netIncome = bonus * (1 - CONFIG.DIRECT_CHARGE);
 
-            // 🔥 partial control
+            // 🔥 PARTIAL CONTROL
             if (earned + netIncome > maxIncome) {
                 netIncome = maxIncome - earned;
             }
