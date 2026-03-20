@@ -408,15 +408,13 @@ if (sponsor_id && sponsor_id !== "") {
         const userId = spUser[0].id;
         const deposit = spUser[0].total_deposit;
 
-        const [sumIncome] = await conn.query(`
-            SELECT SUM(net_total) as total 
-            FROM Income_Logs 
-            WHERE user_id=?
-        `, [userId]);
+const [sumIncome] = await conn.query(`
+    SELECT SUM(net_total) as total 
+    FROM Income_Logs 
+    WHERE user_id=?
+`, [userId]);
 
-        const deposit = user.total_deposit || 0;
-
-const earned = income[0].total || 0;
+const earned = sumIncome[0].total || 0;
 const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 
         if (earned >= maxIncome) return;
