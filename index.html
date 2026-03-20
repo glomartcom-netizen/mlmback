@@ -387,7 +387,7 @@ app.post('/api/admin/deposit-approve', async (req, res) => {
         );  
                     
 // ======================================
-// 🔥 DIRECT INCOME WITH 4X CONTROL (FINAL CLEAN)
+// 🔥 DIRECT INCOME (FINAL STABLE VERSION)
 // ======================================
 if (sponsor_id && sponsor_id !== "") {
 
@@ -418,14 +418,12 @@ if (sponsor_id && sponsor_id !== "") {
         const earned = sumIncome[0].total || 0;
         const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 
-        // 🚫 STOP IF 4X REACHED
-        if (earned >= maxIncome) {
-            // just skip income (NO RETURN)
-        } else {
+        // 🚫 STOP IF 4X DONE
+        if (earned < maxIncome) {
 
             let netIncome = bonus * (1 - CONFIG.DIRECT_CHARGE);
 
-            // 🔥 PARTIAL CONTROL
+            // 🔥 LIMIT CONTROL
             if (earned + netIncome > maxIncome) {
                 netIncome = maxIncome - earned;
             }
@@ -433,15 +431,16 @@ if (sponsor_id && sponsor_id !== "") {
             if (netIncome > 0) {
 
                 const gross = netIncome / (1 - CONFIG.DIRECT_CHARGE);
-                const serviceCharge = gross * CONFIG.DIRECT_CHARGE;
+                const charge = gross * CONFIG.DIRECT_CHARGE;
 
                 await conn.query(`
                     INSERT INTO Income_Logs 
                     (user_id, type, amount, service_charge, net_total) 
                     VALUES (?, 'DIRECT', ?, ?, ?)
-                `, [userId, gross, serviceCharge, netIncome]);
+                `, [userId, gross, charge, netIncome]);
 
-                await updateWallet(userId, netIncome, 'CREDIT', 'Direct Income');
+                // ✅ FINAL FIX (IMPORTANT)
+                await updateWallet(conn, userId, netIncome, 'CREDIT', 'Direct Income');
             }
         }
     }
@@ -755,29 +754,30 @@ app.post('/api/admin/block-user', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }                  
 });                  
                   
-app.get('/api/admin/members', async (req, res) => {      
-    try {      
-        const [rows] = await pool.query(`      
-            SELECT       
-                u.id,      
-                u.member_id,      
-                u.password,      
-                u.full_name,      
-                u.mobile,      
-                u.email,      
-                u.total_deposit,      
-                u.status,      
-                u.sponsor_id,      
-                s.full_name as sponsor_name      
-            FROM Users u      
-            LEFT JOIN Users s ON u.sponsor_id = s.member_id      
-            ORDER BY u.id DESC      
-        `);      
-        res.json(rows);      
-    } catch (err) {      
-        res.status(500).json({ error: err.message });      
-    }      
-});      
+app.get('/api/admin/members', async (req, res) => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT 
+                u.id,
+                u.member_id,
+                u.password,
+                u.full_name,
+                u.mobile,
+                u.email,
+                u.total_deposit,
+                u.status,
+                u.sponsor_id,
+                u.created_at,   -- 🔥 JOIN DATE ADDED
+                s.full_name as sponsor_name
+            FROM Users u
+            LEFT JOIN Users s ON u.sponsor_id = s.member_id
+            ORDER BY u.id DESC
+        `);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
                   
 app.get('/api/admin/deposits', async (req, res) => {                  
     try {                  
@@ -847,58 +847,153 @@ app.get('/api/user/:memberId', async (req, res) => {
 });       
       
 app.post('/api/admin/wallet-to-deposit', async (req, res) => {      
+
     const { member_id, amount } = req.body;      
-      
     const conn = await pool.getConnection();      
-      
+
     try {      
         await conn.beginTransaction();      
-      
+
         const [u] = await conn.query(      
             "SELECT id FROM Users WHERE member_id=?",      
             [member_id]      
         );      
-      
+
         if (u.length === 0) throw new Error("User not found");      
-      
+
         const userId = u[0].id;      
-      
-        // 💸 Deduct from wallet      
+
+        // 🔴 BALANCE CHECK
         const [wallet] = await conn.query(      
             "SELECT balance FROM Wallets WHERE user_id=?",      
             [userId]      
         );      
-      
-        if (wallet[0].balance < amount)      
+
+        if (!wallet[0] || wallet[0].balance < amount)      
             throw new Error("Insufficient balance");      
-      
-        await conn.query(      
-            "UPDATE Wallets SET balance = balance - ? WHERE user_id=?",      
-            [amount, userId]      
-        );      
-      
-        // 💰 Add as deposit      
+
+        // 💸 WALLET DEDUCT (WITH LOG)
+        await updateWallet(
+            conn,
+            userId,
+            amount,
+            'DEBIT',
+            'Wallet to Deposit'
+        );
+
+        // 💰 ADD DEPOSIT
         await conn.query(      
             "INSERT INTO Deposits (user_id, amount, status) VALUES (?, ?, 'APPROVED')",      
             [userId, amount]      
         );      
-      
+
+        // 📊 UPDATE USER DEPOSIT
         await conn.query(      
             "UPDATE Users SET total_deposit = total_deposit + ? WHERE id=?",      
             [amount, userId]      
         );      
-      
+
         await conn.commit();      
-      
-        res.json({ success: true, message: "Converted to Deposit" });      
-      
+
+        res.json({ 
+            success: true, 
+            message: "Converted to Deposit" 
+        });      
+
     } catch (err) {      
         await conn.rollback();      
         res.status(500).json({ error: err.message });      
     } finally {      
         conn.release();      
     }      
-});   
+});
+
+// ==========================================
+// 🔥 DAILY PAYOUT (USER-WISE FINAL)
+// ==========================================
+app.get('/api/admin/daily-payout', async (req, res) => {
+    try {
+
+        const [rows] = await pool.query(`
+
+            SELECT 
+                u.member_id,
+                u.full_name,
+                u.mobile,
+                u.bank_name,
+                u.account_number,
+                u.ifsc_code,
+
+                IFNULL(SUM(CASE WHEN i.type='ROI' THEN i.net_total ELSE 0 END),0) as roi,
+                IFNULL(SUM(CASE WHEN i.type='DIRECT' THEN i.net_total ELSE 0 END),0) as direct,
+                IFNULL(SUM(CASE WHEN i.type='LEVEL' THEN i.net_total ELSE 0 END),0) as level,
+
+                IFNULL(SUM(i.net_total),0) as total
+
+            FROM Income_Logs i
+            JOIN Users u ON i.user_id = u.id
+
+            WHERE DATE(i.created_at) = CURDATE()
+
+            GROUP BY i.user_id
+
+            ORDER BY total DESC
+
+        `);
+
+        res.json(rows);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+ // ==========================================
+// 🔥 DAILY DEPOSIT FULL DETAILS (FINAL)
+// ==========================================
+app.get('/api/admin/daily-deposits', async (req, res) => {
+    try {
+
+        const [rows] = await pool.query(`
+
+            SELECT 
+                d.created_at,
+
+                u.member_id,
+                u.full_name,
+                u.mobile,
+                u.email,
+                u.sponsor_id,
+
+                d.amount,
+                d.status,
+
+                -- 🔥 NEW vs TOP-UP
+                CASE 
+                    WHEN (
+                        SELECT COUNT(*) 
+                        FROM Deposits d2 
+                        WHERE d2.user_id = d.user_id 
+                        AND d2.id <= d.id
+                    ) = 1 THEN 'NEW'
+                    ELSE 'TOP-UP'
+                END as deposit_type
+
+            FROM Deposits d
+            JOIN Users u ON d.user_id = u.id
+
+            WHERE DATE(d.created_at) = CURDATE()
+
+            ORDER BY d.created_at DESC
+
+        `);
+
+        res.json(rows);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});         
 
 // ==========================================
 // 🔓 LEVEL UNLOCK USERS (SAFE + CONFIG)
