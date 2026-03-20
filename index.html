@@ -33,8 +33,46 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// 🔥 ADD THIS LINE HERE
-const LEVEL_UNLOCK = 300000;
+// ==========================================
+// 🔥 MASTER CONFIG (FINAL COMPLETE)
+// ==========================================
+const CONFIG = {
+
+    // 🔓 LEVEL CONTROL
+    LEVEL_UNLOCK: 300000,
+
+    // 💰 INCOME LIMIT
+    MAX_INCOME_MULTIPLIER: 4,
+
+    // 📊 PERCENTAGES
+    DIRECT_PERCENT: 0.05,
+    ROI_PERCENT: 0.005,
+
+    // 💸 CHARGES
+    DIRECT_CHARGE: 0.05,
+    ROI_CHARGE: 0.10,
+    LEVEL_CHARGE: 0.10,
+
+    // 📶 LEVEL SYSTEM
+    LEVEL_RATES: [
+        0.0025,
+        0.0020,
+        0.0015,
+        0.0010,
+        0.0005,
+        0.0003,
+        0.0001
+    ],
+
+    // ⏳ DURATION CONTROL
+    ROI_DAYS: 400,
+    LEVEL_DAYS: 100,
+
+    // 💰 LIMITS
+    MIN_DEPOSIT: 100,
+    MIN_WITHDRAW: 10
+
+};
                   
 // ==========================================                  
 // 2. HELPER FUNCTIONS                  
@@ -172,29 +210,30 @@ app.get('/api/user/dashboard/:memberId', async (req, res) => {
     
         const totalTeam = team[0].total || 0;    
     
-        // 🔹 4X Logic (CORRECT)
-        const earned = income[0].total || 0;
-        const is4x = earned >= (deposit * 4);
-    
-        // 🔹 Referral    
-        const referral = `http://localhost:3000/register?ref=${memberId}`;    
-    
-        res.json({    
-            total_deposit: deposit,    
-    
-            total_roi_income: income[0].roi || 0,    
-            total_level_income: income[0].level || 0,    
-            total_direct_income: income[0].direct || 0,    
-            total_income: income[0].total || 0,    
-    
-            today_team_volume: today[0].total || 0,    
-            total_team_volume: totalTeam,    
-    
-            direct_volume: user.direct_volume || 0,    
-    
-            referral_link: referral,    
-            is_4x: is4x    
-        });    
+        // 🔹 4X Logic (FINAL)
+const earned = income[0].total || 0;
+const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+const is4x = earned >= maxIncome;
+
+// 🔹 Referral    
+const referral = `http://localhost:3000/register?ref=${memberId}`;    
+
+res.json({    
+    total_deposit: deposit,    
+
+    total_roi_income: income[0].roi || 0,    
+    total_level_income: income[0].level || 0,    
+    total_direct_income: income[0].direct || 0,    
+    total_income: earned,    
+
+    today_team_volume: today[0].total || 0,    
+    total_team_volume: totalTeam,    
+
+    direct_volume: user.direct_volume || 0,    
+
+    referral_link: referral,    
+    is_4x: is4x    
+});
     
     } catch (err) {    
         res.status(500).json({ error: err.message });    
@@ -202,10 +241,11 @@ app.get('/api/user/dashboard/:memberId', async (req, res) => {
 });    
 
 // ==========================================
-// 🔥 INCOME BREAKDOWN (DATE WISE)
+// 🔥 INCOME BREAKDOWN (FINAL)
 // ==========================================
 app.get('/api/user/income-breakdown/:memberId', async (req, res) => {
     try {
+
         const [u] = await pool.query(
             "SELECT id FROM Users WHERE member_id=?",
             [req.params.memberId]
@@ -219,9 +259,11 @@ app.get('/api/user/income-breakdown/:memberId', async (req, res) => {
             SELECT 
                 DATE(created_at) as date,
 
-                SUM(CASE WHEN type='ROI' THEN net_total ELSE 0 END) as roi,
-                SUM(CASE WHEN type='LEVEL' THEN net_total ELSE 0 END) as level,
-                SUM(CASE WHEN type='DIRECT' THEN net_total ELSE 0 END) as direct
+                IFNULL(SUM(CASE WHEN type='ROI' THEN net_total ELSE 0 END),0) as roi,
+                IFNULL(SUM(CASE WHEN type='LEVEL' THEN net_total ELSE 0 END),0) as level,
+                IFNULL(SUM(CASE WHEN type='DIRECT' THEN net_total ELSE 0 END),0) as direct,
+
+                IFNULL(SUM(net_total),0) as total
 
             FROM Income_Logs
             WHERE user_id=?
@@ -236,33 +278,78 @@ app.get('/api/user/income-breakdown/:memberId', async (req, res) => {
     }
 });
                   
-// ==========================================                  
-// 5. TREE & TEAM APIs                  
-// ==========================================                  
-app.get('/api/user/full-tree/:memberId', async (req, res) => {                  
-    try {                  
-        const memberId = req.params.memberId;                  
-        const [rows] = await pool.query(`                  
-            WITH RECURSIVE downline AS (                  
-                SELECT id, member_id, full_name, sponsor_id, 1 as level FROM Users WHERE sponsor_id = ?                  
-                UNION ALL                  
-                SELECT u.id, u.member_id, u.full_name, u.sponsor_id, d.level + 1 FROM Users u INNER JOIN downline d ON u.sponsor_id = d.member_id                  
-            ) SELECT * FROM downline ORDER BY level ASC;`, [memberId]);                  
-        res.json(rows);                  
-    } catch (err) { res.status(500).json({ error: err.message }); }                  
-});                  
-                  
-app.get('/api/user/team-count/:memberId', async (req, res) => {                  
-    try {                  
-        const [rows] = await pool.query(`                  
-            WITH RECURSIVE downline AS (                  
-                SELECT member_id FROM Users WHERE sponsor_id=?                  
-                UNION ALL                  
-                SELECT u.member_id FROM Users u INNER JOIN downline d ON u.sponsor_id = d.member_id                  
-            ) SELECT COUNT(*) as total FROM downline`, [req.params.memberId]);                  
-        res.json({ total: rows[0].total || 0 });                  
-    } catch (err) { res.status(500).json({ error: err.message }); }                  
-});                  
+// ==========================================
+// 🌳 FULL TEAM TREE (FINAL)
+// ==========================================
+app.get('/api/user/full-tree/:memberId', async (req, res) => {
+    try {
+
+        const memberId = req.params.memberId;
+
+        const [rows] = await pool.query(`
+            WITH RECURSIVE downline AS (
+                SELECT 
+                    id, 
+                    member_id, 
+                    full_name, 
+                    sponsor_id, 
+                    total_deposit,
+                    status,
+                    1 as level
+                FROM Users 
+                WHERE sponsor_id = ?
+
+                UNION ALL
+
+                SELECT 
+                    u.id, 
+                    u.member_id, 
+                    u.full_name, 
+                    u.sponsor_id, 
+                    u.total_deposit,
+                    u.status,
+                    d.level + 1
+                FROM Users u
+                INNER JOIN downline d ON u.sponsor_id = d.member_id
+            )
+            SELECT * FROM downline
+            ORDER BY level ASC, total_deposit DESC
+        `, [memberId]);
+
+        res.json(rows);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
+// 👥 TEAM COUNT (FINAL)
+// ==========================================
+app.get('/api/user/team-count/:memberId', async (req, res) => {
+    try {
+
+        const [rows] = await pool.query(`
+            WITH RECURSIVE downline AS (
+                SELECT member_id 
+                FROM Users 
+                WHERE sponsor_id=?
+
+                UNION ALL
+
+                SELECT u.member_id 
+                FROM Users u 
+                INNER JOIN downline d ON u.sponsor_id = d.member_id
+            )
+            SELECT COUNT(*) as total FROM downline
+        `, [req.params.memberId]);
+
+        res.json({ total: rows[0].total || 0 });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
                   
 // ==========================================                  
 // 6. DEPOSIT & INCOME LOGIC                  
@@ -283,7 +370,10 @@ app.post('/api/admin/deposit-approve', async (req, res) => {
   
         if (dep.length === 0) throw new Error("Deposit not found");                  
   
-        const { db_user_id, amount, sponsor_id } = dep[0];                  
+        const { db_user_id, amount, sponsor_id } = dep[0];
+                if (amount < CONFIG.MIN_DEPOSIT) {
+    throw new Error(`Minimum deposit is ${CONFIG.MIN_DEPOSIT}`);
+}
   
         // ✅ APPROVE DEPOSIT  
         await conn.query(  
@@ -295,95 +385,94 @@ app.post('/api/admin/deposit-approve', async (req, res) => {
             "UPDATE Users SET total_deposit = total_deposit + ?, status='ACTIVE' WHERE id=?",  
             [amount, db_user_id]  
         );                  
+  // ======================================
+// 🔥 DIRECT INCOME WITH 4X CONTROL (FINAL)
+// ======================================
+if (sponsor_id && sponsor_id !== "") {
+
+    const bonus = amount * CONFIG.DIRECT_PERCENT;
+    const charge = bonus * CONFIG.CHARGE_PERCENT;
+
+    await conn.query(
+        "UPDATE Users SET direct_volume = direct_volume + ? WHERE member_id=?",
+        [amount, sponsor_id]
+    );
+
+    const [spUser] = await conn.query(
+        "SELECT id, total_deposit FROM Users WHERE member_id=?",
+        [sponsor_id]
+    );
+
+    if (spUser.length > 0) {
+
+        const userId = spUser[0].id;
+        const deposit = spUser[0].total_deposit;
+
+        const [sumIncome] = await conn.query(`
+            SELECT SUM(net_total) as total 
+            FROM Income_Logs 
+            WHERE user_id=?
+        `, [userId]);
+
+        const earned = sumIncome[0].total || 0;
+        const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+
+        if (earned >= maxIncome) return;
+
+        let netIncome = bonus - charge;
+
+        // 🔥 partial control
+        if (earned + netIncome > maxIncome) {
+            netIncome = maxIncome - earned;
+        }
+
+        if (netIncome > 0) {
+
+            const gross = netIncome / (1 - CONFIG.CHARGE_PERCENT);
+            const serviceCharge = gross * CONFIG.CHARGE_PERCENT;
+
+            await conn.query(`
+                INSERT INTO Income_Logs 
+                (user_id, type, amount, service_charge, net_total) 
+                VALUES (?, 'DIRECT', ?, ?, ?)
+            `, [userId, gross, serviceCharge, netIncome]);
+
+            await updateWallet(userId, netIncome, 'CREDIT', 'Direct Income');
+        }
+    }
+}
   
-        // ======================================  
-        // 🔥 DIRECT INCOME WITH 4X CONTROL  
-        // ======================================  
-        if (sponsor_id && sponsor_id !== "") {                  
-  
-            const bonus = amount * 0.05;                  
-            const charge = bonus * 0.10;                  
-  
-            await conn.query(  
-                "UPDATE Users SET direct_volume = direct_volume + ? WHERE member_id=?",  
-                [amount, sponsor_id]  
-            );                  
-  
-            const [spUser] = await conn.query(  
-                "SELECT id, total_deposit FROM Users WHERE member_id=?",  
-                [sponsor_id]  
-            );                  
-  
-            if (spUser.length > 0) {                  
-  
-                const userId = spUser[0].id;                  
-                const deposit = spUser[0].total_deposit;                  
-  
-                // 🔴 4X CHECK  
-                const [sumIncome] = await conn.query(`  
-                    SELECT SUM(net_total) as total   
-                    FROM Income_Logs   
-                    WHERE user_id=?  
-                `, [userId]);                  
-  
-                const earned = sumIncome[0].total || 0;                  
-                const maxIncome = deposit * 4;                  
-  
-                if (earned < maxIncome) {                  
-  
-                    await conn.query(`  
-                        INSERT INTO Income_Logs   
-                        (user_id, type, amount, service_charge, net_total)   
-                        VALUES (?, 'DIRECT', ?, ?, ?)  
-                    `, [userId, bonus, charge, bonus - charge]);                  
-  
-                    await updateWallet(  
-                        userId,  
-                        bonus - charge,  
-                        'CREDIT',  
-                        'Direct Income'  
-                    );                  
-                }  
-            }  
-        }  
-  
-        // ======================================  
-        // 🔥 LEVEL TRACKING (NO CHANGE NEEDED)  
-        // ======================================  
-        let upLine = sponsor_id;                  
-  
-        const rates = [0, 0.0025, 0.0020, 0.0015, 0.0010, 0.0005, 0.0003, 0.0001];                  
-  
-        for (let i = 1; i <= 7; i++) {                  
-            if (!upLine) break;                  
-  
-            const [sp] = await conn.query(  
-                "SELECT id, sponsor_id FROM Users WHERE member_id=?",  
-                [upLine]  
-            );                  
-  
-            if (sp.length === 0) break;                  
-  
-            await conn.query(`  
-                INSERT INTO Level_Tracker   
-                (user_id, from_user_id, level_no, daily_amt, days_left, status)   
-                VALUES (?, ?, ?, ?, 100, 'PENDING')  
-            `, [sp[0].id, db_user_id, i, amount * rates[i]]);                  
-  
-            upLine = sp[0].sponsor_id;                  
-        }                  
-  
-        await conn.commit();                  
-  
-        res.json({ success: true, message: "Approved & All Trackers Set!" });                  
-  
-    } catch (err) {                  
-        await conn.rollback();                  
-        res.status(500).json({ error: err.message });                  
-    } finally {                  
-        conn.release();                  
-    }                  
-});  
+// ======================================
+// 🔥 LEVEL TRACKING (DYNAMIC CONFIG VERSION)
+// ======================================
+let upLine = sponsor_id;
+
+for (let i = 0; i < CONFIG.LEVEL_RATES.length; i++) {
+
+    if (!upLine) break;
+
+    const [sp] = await conn.query(
+        "SELECT id, sponsor_id FROM Users WHERE member_id=?",
+        [upLine]
+    );
+
+    if (sp.length === 0) break;
+
+    const levelNo = i + 1;
+    const rate = CONFIG.LEVEL_RATES[i];
+
+    await conn.query(`
+        INSERT INTO Level_Tracker 
+        (user_id, from_user_id, level_no, daily_amt, days_left, status) 
+        VALUES (?, ?, ?, ?, CONFIG.LEVEL_DAYS, 'PENDING')
+        sp[0].id,
+        db_user_id,
+        levelNo,
+        amount * rate
+    ]);
+
+    upLine = sp[0].sponsor_id;
+}
                   
 // ==========================================                  
 // 7. DAILY CRON (ROI & LEVEL)                  
@@ -395,142 +484,203 @@ cron.schedule('0 0 * * *', async () => {
     try {                  
         await conn.beginTransaction();                  
   
-        // ======================================  
-        // 🔥 ROI PROCESS (WITH 4X CONTROL)  
-        // ======================================  
-        const [roiUsers] = await conn.query(`  
-            SELECT id, total_deposit   
-            FROM Users   
-            WHERE status='ACTIVE' AND roi_days < 400  
-        `);                  
+// ======================================
+// 🔥 ROI PROCESS (FINAL 4X SAFE)
+// ======================================
+const [roiUsers] = await conn.query(`
+    SELECT id, total_deposit 
+    FROM Users 
+    WHERE status='ACTIVE' AND roi_days < ?
+`, [CONFIG.ROI_DAYS]);
+
+for (let u of roiUsers) {
+
+    // 🔴 TOTAL INCOME
+    const [sumIncome] = await conn.query(`
+        SELECT SUM(net_total) as total 
+        FROM Income_Logs 
+        WHERE user_id=?
+    `, [u.id]);
+
+    const earned = sumIncome[0].total || 0;
+    const maxIncome = u.total_deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+
+    // 🚫 STOP IF 4X REACHED
+    if (earned >= maxIncome) continue;
+
+    // 🔥 ROI CALCULATION
+    const roiTotal = u.total_deposit * CONFIG.ROI_PERCENT;
+    let netIncome = roiTotal * (1 - CONFIG.ROI_CHARGE);
+
+    // 🔥 PARTIAL CONTROL
+    if (earned + netIncome > maxIncome) {
+        netIncome = maxIncome - earned;
+    }
+
+    // 🔒 DUPLICATE CHECK
+    const [existROI] = await conn.query(`
+        SELECT id FROM Income_Logs 
+        WHERE user_id=? AND type='ROI' AND DATE(created_at)=CURDATE()
+    `, [u.id]);
+
+    if (existROI.length === 0 && netIncome > 0) {
+
+        const gross = netIncome / (1 - CONFIG.ROI_CHARGE);
+        const charge = gross * CONFIG.ROI_CHARGE;
+
+        await conn.query(`
+            INSERT INTO Income_Logs 
+            (user_id, type, amount, service_charge, net_total) 
+            VALUES (?, 'ROI', ?, ?, ?)
+        `, [u.id, gross, charge, netIncome]);
+
+        await updateWallet(u.id, netIncome, 'CREDIT', 'Daily ROI');
+    }
+}
+
+// ======================================
+// 🔄 ROI DAYS UPDATE (FINAL)
+// ======================================
+await conn.query(`
+    UPDATE Users 
+    SET roi_days = roi_days + 1 
+    WHERE status='ACTIVE' AND roi_days < ?
+`, [CONFIG.ROI_DAYS]);
   
-        for (let u of roiUsers) {                  
-  
-            // 🔴 TOTAL INCOME CHECK  
-            const [sumIncome] = await conn.query(`  
-                SELECT SUM(net_total) as total   
-                FROM Income_Logs   
-                WHERE user_id=?  
-            `, [u.id]);                  
-  
-            const earned = sumIncome[0].total || 0;                  
-            const maxIncome = u.total_deposit * 4;                  
-  
-            if (earned >= maxIncome) continue; // 🚫 STOP                  
-  
-            const roiTotal = u.total_deposit * 0.005;                  
-            const roiNet = roiTotal * 0.9;                  
-  
-            // 🔒 DUPLICATE CHECK  
-            const [existROI] = await conn.query(`  
-                SELECT id FROM Income_Logs   
-                WHERE user_id=? AND type='ROI' AND DATE(created_at)=CURDATE()  
-            `, [u.id]);                  
-  
-            if (existROI.length === 0) {                  
-                await conn.query(`  
-                    INSERT INTO Income_Logs   
-                    (user_id, type, amount, service_charge, net_total)   
-                    VALUES (?, 'ROI', ?, ?, ?)  
-                `, [u.id, roiTotal, roiTotal * 0.1, roiNet]);                  
-  
-                await updateWallet(u.id, roiNet, 'CREDIT', 'Daily ROI');                  
-            }                  
-        }                  
-  
-        // 🔄 ROI DAYS UPDATE (ONLY FOR ACTIVE USERS)  
-        await conn.query(`  
-            UPDATE Users   
-            SET roi_days = roi_days + 1   
-            WHERE status='ACTIVE' AND roi_days < 400  
-        `);                  
-  
-        // ======================================  
-        // 🔥 LEVEL PROCESS (WITH 4X CONTROL)  
-        // ======================================  
-        const [trackers] = await conn.query(`  
-            SELECT lt.*, u.direct_volume, u.total_deposit  
-            FROM Level_Tracker lt  
-            JOIN Users u ON lt.user_id = u.id  
-            WHERE lt.days_left > 0 AND lt.status = 'PENDING'  
-        `);                  
-  
-        for (let r of trackers) {                  
-  
-            // 🔴 TOTAL INCOME CHECK  
-            const [sumIncome] = await conn.query(`  
-                SELECT SUM(net_total) as total   
-                FROM Income_Logs   
-                WHERE user_id=?  
-            `, [r.user_id]);                  
-  
-            const earned = sumIncome[0].total || 0;                  
-            const maxIncome = r.total_deposit * 4;                  
-  
-            if (earned >= maxIncome) continue; // 🚫 STOP                  
-  
-            if (r.level_no === 1 || r.direct_volume >= LEVEL_UNLOCK)                  
-  
-                const amt = r.daily_amt;                  
-                const netAmt = amt * 0.9;                  
-  
-                // 🔒 DUPLICATE CHECK  
-                const [existLevel] = await conn.query(`  
-                    SELECT id FROM Income_Logs   
-                    WHERE user_id=? AND type='LEVEL' AND DATE(created_at)=CURDATE()  
-                `, [r.user_id]);                  
-  
-                if (existLevel.length === 0) {                  
-                    await conn.query(`  
-                        INSERT INTO Income_Logs   
-                        (user_id, type, amount, service_charge, net_total)   
-                        VALUES (?, 'LEVEL', ?, ?, ?)  
-                    `, [r.user_id, amt, amt * 0.1, netAmt]);                  
-  
-                    await updateWallet(r.user_id, netAmt, 'CREDIT', 'Level Income');                  
-                }                  
-  
-                const newDays = r.days_left - 1;                  
-                const newStatus = (newDays === 0) ? 'COMPLETED' : 'PENDING';                  
-  
-                await conn.query(`  
-                    UPDATE Level_Tracker   
-                    SET days_left = ?, status = ?   
-                    WHERE id = ?  
-                `, [newDays, newStatus, r.id]);                  
-            }                  
-        }                  
-  
-        await conn.commit();                  
-  
-    } catch (err) {                  
-        await conn.rollback();                  
-        console.error("CRON ERROR:", err);                  
-    } finally {                  
-        conn.release();                  
-    }                  
-});  
+// ======================================
+// 🔥 LEVEL PROCESS (FINAL SAFE VERSION)
+// ======================================
+const [trackers] = await conn.query(`
+    SELECT lt.*, u.direct_volume, u.total_deposit
+    FROM Level_Tracker lt
+    JOIN Users u ON lt.user_id = u.id
+    WHERE lt.days_left > 0 AND lt.status = 'PENDING'
+`);
+
+for (let r of trackers) {
+
+    // 🔴 TOTAL INCOME
+    const [sumIncome] = await conn.query(`
+        SELECT SUM(net_total) as total 
+        FROM Income_Logs 
+        WHERE user_id=?
+    `, [r.user_id]);
+
+    const earned = sumIncome[0].total || 0;
+    const maxIncome = r.total_deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+
+    // 🚫 STOP IF 4X DONE
+    if (earned >= maxIncome) continue;
+
+    // 🔓 LEVEL UNLOCK CONDITION
+    if (r.level_no === 1 || r.direct_volume >= CONFIG.LEVEL_UNLOCK) {
+
+        const amt = r.daily_amt;
+
+        let netAmt = amt * (1 - CONFIG.LEVEL_CHARGE);
+
+        // 🔥 PARTIAL CONTROL
+        if (earned + netAmt > maxIncome) {
+            netAmt = maxIncome - earned;
+        }
+
+        if (netAmt > 0) {
+
+            // 🔒 DUPLICATE CHECK
+            const [existLevel] = await conn.query(`
+                SELECT id FROM Income_Logs 
+                WHERE user_id=? AND type='LEVEL' AND DATE(created_at)=CURDATE()
+            `, [r.user_id]);
+
+            if (existLevel.length === 0) {
+
+                const gross = netAmt / (1 - CONFIG.LEVEL_CHARGE);
+                const charge = gross * CONFIG.LEVEL_CHARGE;
+
+                await conn.query(`
+                    INSERT INTO Income_Logs 
+                    (user_id, type, amount, service_charge, net_total) 
+                    VALUES (?, 'LEVEL', ?, ?, ?)
+                `, [r.user_id, gross, charge, netAmt]);
+
+                await updateWallet(
+                    r.user_id,
+                    netAmt,
+                    'CREDIT',
+                    'Level Income'
+                );
+            }
+        }
+
+        const newDays = r.days_left - 1;
+        const newStatus = (newDays === 0) ? 'COMPLETED' : 'PENDING';
+
+        await conn.query(`
+            UPDATE Level_Tracker 
+            SET days_left = ?, status = ? 
+            WHERE id = ?
+        `, [newDays, newStatus, r.id]);
+    }
+}
                   
-// ==========================================                  
-// 8. WITHDRAW SYSTEM (🧩 STEP 6: Modified)                  
-// ==========================================                  
-app.post('/api/user/withdraw', async (req, res) => {                  
-    try {                  
-        const { memberId, amount } = req.body;                  
-        const [u] = await pool.query("SELECT id FROM Users WHERE member_id=?", [memberId]);                  
-        if (u.length === 0) return res.json({ success: false, message: "User not found" });                  
-                  
-        // Check Wallet Balance                  
-        const [wallet] = await pool.query("SELECT balance FROM Wallets WHERE user_id=?", [u[0].id]);                  
-        const balance = wallet[0]?.balance || 0;                  
-                  
-        if (amount < 10) return res.json({ success: false, message: "Min Withdraw $10" });                  
-        if (amount > balance) return res.json({ success: false, message: "Insufficient Wallet Balance" });                  
-                  
-        await pool.query("INSERT INTO Withdrawals (user_id, amount, status) VALUES (?, ?, 'PENDING')", [u[0].id, amount]);                  
-        res.json({ success: true, message: "Withdraw Request Sent!" });                  
-    } catch (err) { res.status(500).json({ error: err.message }); }                  
-});                  
+// ==========================================
+// 8. WITHDRAW SYSTEM (FINAL SAFE VERSION)
+// ==========================================
+app.post('/api/user/withdraw', async (req, res) => {
+    try {
+
+        const { memberId, amount } = req.body;
+
+        const [u] = await pool.query(
+            "SELECT id FROM Users WHERE member_id=?",
+            [memberId]
+        );
+
+        if (u.length === 0) {
+            return res.json({ success: false, message: "User not found" });
+        }
+
+        const userId = u[0].id;
+
+        // 🔹 Wallet Balance
+        const [wallet] = await pool.query(
+            "SELECT balance FROM Wallets WHERE user_id=?",
+            [userId]
+        );
+
+        const balance = wallet[0]?.balance || 0;
+
+        // 🔥 MIN WITHDRAW (CONFIG)
+        if (amount < CONFIG.MIN_WITHDRAW) {
+            return res.json({
+                success: false,
+                message: `Minimum withdraw is ${CONFIG.MIN_WITHDRAW}`
+            });
+        }
+
+        // 🔥 BALANCE CHECK
+        if (amount > balance) {
+            return res.json({
+                success: false,
+                message: "Insufficient Wallet Balance"
+            });
+        }
+
+        // 🔥 INSERT REQUEST
+        await pool.query(
+            "INSERT INTO Withdrawals (user_id, amount, status) VALUES (?, ?, 'PENDING')",
+            [userId, amount]
+        );
+
+        res.json({
+            success: true,
+            message: "Withdraw Request Sent!"
+        });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
                   
 // ==========================================                  
 // 9. ADMIN CORE APIs                  
@@ -707,10 +857,11 @@ app.post('/api/admin/wallet-to-deposit', async (req, res) => {
 });   
 
 // ==========================================
-// 🔓 LEVEL UNLOCK USERS (300K DIRECT VOLUME)
+// 🔓 LEVEL UNLOCK USERS (SAFE + CONFIG)
 // ==========================================
 app.get('/api/admin/unlocked-users', async (req, res) => {
     try {
+
         const [rows] = await pool.query(`
             SELECT 
                 member_id,
@@ -718,9 +869,9 @@ app.get('/api/admin/unlocked-users', async (req, res) => {
                 direct_volume,
                 total_deposit
             FROM Users
-            WHERE direct_volume >= ${LEVEL_UNLOCK}
+            WHERE direct_volume >= ?
             ORDER BY direct_volume DESC
-        `);
+        `, [CONFIG.LEVEL_UNLOCK]);
 
         res.json(rows);
 
@@ -730,29 +881,37 @@ app.get('/api/admin/unlocked-users', async (req, res) => {
 });
 
 // ==========================================
-// 🔥 ADMIN 4X CHECK
+// 🔥 ADMIN 4X STATUS (FAST + CONFIG)
 // ==========================================
 app.get('/api/admin/4x-status', async (req, res) => {
     try {
+
         const [rows] = await pool.query(`
             SELECT 
+                u.id,
                 u.member_id,
                 u.total_deposit,
-
-                IFNULL((
-                    SELECT SUM(net_total)
-                    FROM Income_Logs
-                    WHERE user_id = u.id
-                ),0) as total_income
-
+                IFNULL(SUM(i.net_total), 0) as total_income
             FROM Users u
+            LEFT JOIN Income_Logs i ON i.user_id = u.id
+            GROUP BY u.id
+            ORDER BY total_income DESC
         `);
 
-        rows.forEach(r=>{
-            r.is_4x = r.total_income >= (r.total_deposit * 4);
+        const result = rows.map(r => {
+            const maxIncome = r.total_deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+
+            return {
+                member_id: r.member_id,
+                total_deposit: r.total_deposit,
+                total_income: r.total_income,
+                max_income: maxIncome,
+                remaining: maxIncome - r.total_income,
+                is_4x: r.total_income >= maxIncome
+            };
         });
 
-        res.json(rows);
+        res.json(result);
 
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -760,15 +919,16 @@ app.get('/api/admin/4x-status', async (req, res) => {
 });
 
 // ==========================================
-// 🔢 LEVEL UNLOCK COUNT
+// 🔢 LEVEL UNLOCK COUNT (SAFE + CONFIG)
 // ==========================================
 app.get('/api/admin/unlock-count', async (req, res) => {
     try {
+
         const [rows] = await pool.query(`
             SELECT COUNT(*) as total
             FROM Users
-            WHERE direct_volume >= ${LEVEL_UNLOCK}
-        `);
+            WHERE direct_volume >= ?
+        `, [CONFIG.LEVEL_UNLOCK]);
 
         res.json({ total: rows[0].total });
 
@@ -778,20 +938,21 @@ app.get('/api/admin/unlock-count', async (req, res) => {
 });
 
 // ==========================================
-// 📊 LEVEL PROGRESS USERS
+// 📊 LEVEL PROGRESS USERS (SAFE + CONFIG)
 // ==========================================
 app.get('/api/admin/unlock-progress', async (req, res) => {
     try {
+
         const [rows] = await pool.query(`
             SELECT 
                 member_id,
                 full_name,
                 direct_volume,
-                (direct_volume / ${LEVEL_UNLOCK} * 100) as progress
+                ROUND((direct_volume / ?) * 100, 2) as progress
             FROM Users
-            WHERE direct_volume < ${LEVEL_UNLOCK}
+            WHERE direct_volume < ?
             ORDER BY direct_volume DESC
-        `);
+        `, [CONFIG.LEVEL_UNLOCK, CONFIG.LEVEL_UNLOCK]);
 
         res.json(rows);
 
