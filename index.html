@@ -937,12 +937,19 @@ app.post('/api/admin/wallet-to-deposit', async (req, res) => {
 });
 
 // ==========================================
-// 🔥 DAILY PAYOUT FULL ANALYTICS (FINAL)
+// 🔥 DAILY PAYOUT FULL ANALYTICS (FINAL FIXED)
 // ==========================================
 app.get('/api/admin/daily-payout', async (req, res) => {
     try {
 
         const date = req.query.date;
+
+        // ✅ WHERE CONDITION FIX
+        const whereClause = date
+            ? "WHERE DATE(i.created_at) = ?"
+            : "WHERE DATE(i.created_at) = CURDATE()";
+
+        const values = date ? [date] : [];
 
         const [rows] = await pool.query(`
             SELECT 
@@ -973,14 +980,15 @@ app.get('/api/admin/daily-payout', async (req, res) => {
             FROM Income_Logs i
             JOIN Users u ON i.user_id = u.id
 
-            WHERE DATE(i.created_at) = ${date ? "?" : "CURDATE()"}
+            ${whereClause}
 
             GROUP BY i.user_id
             ORDER BY today_income DESC
-        `, date ? [date] : []);
+        `, values);
 
         const result = rows.map(r => {
             const maxIncome = r.total_deposit * CONFIG.MAX_INCOME_MULTIPLIER;
+
             return {
                 ...r,
                 max_income: maxIncome,
