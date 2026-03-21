@@ -216,7 +216,7 @@ const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 const is4x = earned >= maxIncome;
 
 // 🔹 Referral    
-const referral = `http://localhost:3000/register?ref=${memberId}`;    
+const referral = `http://localhost:3000?member=${memberId}`;   
 
 res.json({    
     total_deposit: deposit,    
@@ -553,7 +553,7 @@ if (sponsor_id && sponsor_id !== "") {
                 `, [userId, gross, charge, netIncome]);
 
                 // ✅ FINAL FIX (IMPORTANT)
-                await updateWallet(conn, userId, netIncome, 'CREDIT', 'Direct Income');
+                await updateWallet(userId, netIncome, 'CREDIT', 'Direct Income');
             }
         }
     }
