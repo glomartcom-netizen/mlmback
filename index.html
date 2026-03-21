@@ -814,11 +814,14 @@ app.post('/api/user/withdraw', async (req, res) => {
             throw new Error("Insufficient Wallet Balance");
         }
 
-        // 🔥 CREATE REQUEST
-        await conn.query(
-            "INSERT INTO Withdrawals (user_id, amount, status) VALUES (?, ?, 'PENDING')",
-            [userId, amount]
-        );
+        // 🔥 WALLET DEDUCT FIRST
+await updateWallet(userId, amount, 'DEBIT', 'Withdraw Request');
+
+// 🔥 CREATE REQUEST
+await conn.query(
+    "INSERT INTO Withdrawals (user_id, amount, status) VALUES (?, ?, 'PENDING')",
+    [userId, amount]
+);
 
         await conn.commit();
 
