@@ -522,19 +522,18 @@ if (sponsor_id && sponsor_id !== "") {
     if (spUser.length > 0) {
 
         const userId = spUser[0].id;
-        const deposit = spUser[0].total_deposit || 0;
+const deposit = spUser[0].total_deposit || 0;
 
-        // 🔴 TOTAL INCOME
-        const [sumIncome] = await conn.query(`
-            SELECT SUM(net_total) as total 
-            FROM Income_Logs 
-            WHERE user_id=?
-        `, [userId]);
+// 🔴 TOTAL INCOME
+const [sumIncome] = await conn.query(`
+    SELECT SUM(net_total) as total 
+    FROM Income_Logs 
+    WHERE user_id=?
+`, [userId]);
+
+const earned = sumIncome[0].total || 0;
+const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
                     
-        const deposit = user.total_deposit || 0;
-        const earned = sumIncome[0].total || 0;
-        const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
-
         // 🚫 STOP IF 4X DONE
         if (earned < maxIncome) {
 
