@@ -1296,7 +1296,51 @@ app.get('/api/admin/growth', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-                  
+
+// ==========================================
+// 📊 ADMIN STATS (TOP DASHBOARD CARDS)
+// ==========================================
+app.get('/api/admin/stats', async (req, res) => {
+    try {
+
+        // 👥 Total Users
+        const [users] = await pool.query(`
+            SELECT COUNT(*) as total FROM Users
+        `);
+
+        // 💰 Total Deposit
+        const [deposit] = await pool.query(`
+            SELECT SUM(amount) as total 
+            FROM Deposits 
+            WHERE status='APPROVED'
+        `);
+
+        // 🏧 Total Withdraw
+        const [withdraw] = await pool.query(`
+            SELECT SUM(amount) as total 
+            FROM Withdrawals 
+            WHERE status='PAID'
+        `);
+
+        // 📅 Today Income
+        const [today] = await pool.query(`
+            SELECT SUM(net_total) as total 
+            FROM Income_Logs 
+            WHERE DATE(created_at) = CURDATE()
+        `);
+
+        res.json({
+            users: users[0].total || 0,
+            deposit: deposit[0].total || 0,
+            withdraw: withdraw[0].total || 0,
+            today: today[0].total || 0
+        });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+                            
 // ==========================================                  
 // 10. AUTH & PUBLIC                  
 // ==========================================                  
