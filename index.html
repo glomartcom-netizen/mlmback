@@ -196,21 +196,24 @@ app.get('/api/user/dashboard/:memberId', async (req, res) => {
         `, [memberId]);    
     
         // 🔹 Total Team Volume    
-        const [team] = await pool.query(`    
-            WITH RECURSIVE downline AS (    
-                SELECT id, member_id, total_deposit     
-                FROM Users WHERE sponsor_id = ?    
-                UNION ALL    
-                SELECT u.id, u.member_id, u.total_deposit     
-                FROM Users u     
-                INNER JOIN downline d ON u.sponsor_id = d.member_id    
-            )    
-            SELECT SUM(total_deposit) as total FROM downline    
-        `, [memberId]);    
-    
-        const totalTeam = team[0].total || 0;    
-    
-        // 🔹 4X Logic (FINAL)
+const [team] = await pool.query(`    
+    WITH RECURSIVE downline AS (    
+        SELECT id, member_id, total_deposit     
+        FROM Users WHERE sponsor_id = ?    
+        UNION ALL    
+        SELECT u.id, u.member_id, u.total_deposit     
+        FROM Users u     
+        INNER JOIN downline d ON u.sponsor_id = d.member_id    
+    )    
+    SELECT SUM(total_deposit) as total FROM downline    
+`, [memberId]);    
+
+const totalTeam = team[0].total || 0;    
+
+// ✅ ADD THIS LINE (FINAL FIX)
+const deposit = user.total_deposit || 0;
+
+// 🔹 4X Logic (FINAL)
 const earned = income[0].total || 0;
 const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 const is4x = earned >= maxIncome;
@@ -1016,12 +1019,11 @@ app.post('/api/admin/wallet-to-deposit', async (req, res) => {
 
         // 💸 WALLET DEDUCT (WITH LOG)
         await updateWallet(
-            conn,
-            userId,
-            amount,
-            'DEBIT',
-            'Wallet to Deposit'
-        );
+    userId,
+    amount,
+    'DEBIT',
+    'Wallet to Deposit'
+);
 
         // 💰 ADD DEPOSIT
         await conn.query(      
