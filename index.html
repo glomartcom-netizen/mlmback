@@ -527,7 +527,8 @@ if (sponsor_id && sponsor_id !== "") {
             FROM Income_Logs 
             WHERE user_id=?
         `, [userId]);
-
+                    
+        const deposit = user.total_deposit || 0;
         const earned = sumIncome[0].total || 0;
         const maxIncome = deposit * CONFIG.MAX_INCOME_MULTIPLIER;
 
